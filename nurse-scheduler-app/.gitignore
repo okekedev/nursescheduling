@@ -13,3 +13,4 @@ target/
 
 # Ignore local environment files
 .env
+secrets.properties

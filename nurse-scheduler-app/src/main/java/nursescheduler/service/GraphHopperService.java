@@ -38,7 +38,7 @@ public class GraphHopperService {
     @PostConstruct
     public void init() {
         graphHopper = new GraphHopper();
-        graphHopper.setOSMFile("graphhopper/texas-latest.osm.pbf");
+        graphHopper.setOSMFile("src/main/resources/graphhopper/texas-latest.osm.pbf");
         graphHopper.setGraphHopperLocation("src/main/resources/graphhopper/graph-cache");
 
         // Set the encoded values used in the CustomModel
