@@ -25,6 +25,11 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
+    <groupId>jakarta.persistence</groupId>
+    <artifactId>jakarta.persistence-api</artifactId>
+    
+</dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
@@ -82,6 +87,7 @@
             <artifactId>hapi-fhir-structures-r4</artifactId>
             <version>6.10.0</version>
         </dependency>
+
     </dependencies>
     <build>
         <plugins>

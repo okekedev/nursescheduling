@@ -1,12 +1,14 @@
 package nursescheduler.service;
 
-import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.parser.IParser;
-import nursescheduler.model.Appointment;
-import nursescheduler.repository.AppointmentRepository;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.hl7.fhir.r4.model.Appointment.AppointmentParticipantComponent;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Extension;
-import org.hl7.fhir.r4.model.Appointment.AppointmentParticipantComponent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,16 +19,15 @@ import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
+import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.parser.IParser;
+import nursescheduler.model.Appointment;
+import nursescheduler.repository.AppointmentRepository;
 
 @Service
 public class FhirAppointmentFetchService {
 
-    private static final Logger logger = LoggerFactory.getLogger(FhirFetchService.class);
+    private static final Logger logger = LoggerFactory.getLogger(FhirAppointmentFetchService.class);
     private final FhirContext fhirContext = FhirContext.forR4();
     private final IParser parser = fhirContext.newJsonParser();
 
@@ -109,7 +110,7 @@ public class FhirAppointmentFetchService {
                 appointment.setStartTime(LocalDateTime.parse(
                         appt.getStartElement().asStringValue(), DateTimeFormatter.ISO_DATE_TIME));
             }
-            appointment.setDuration(appt.getMinutesDuration() != null ? appt.getMinutesDuration() : 0);
+            appointment.setDuration(appt.getMinutesDuration()); // Removed != null check since int is never null
 
             // Service type
             if (!appt.getServiceType().isEmpty() && !appt.getServiceType().get(0).getCoding().isEmpty()) {
