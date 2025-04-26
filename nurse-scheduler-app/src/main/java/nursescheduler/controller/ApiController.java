@@ -1,26 +1,29 @@
 package nursescheduler.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import nursescheduler.service.FhirAppointmentFetchService;
+import nursescheduler.service.TokenService;
 
 @RestController
 @RequestMapping("/api")
 public class ApiController {
 
-    @Autowired
-    private FhirAppointmentFetchService fhirAppointmentFetchService;
+    private final TokenService tokenService;
+
+    public ApiController(TokenService tokenService) {
+        this.tokenService = tokenService;
+    }
 
     @GetMapping("/fetch-test")
     public String fetchTest() {
         return "Fetch test endpoint works!";
     }
 
-    @GetMapping("/fetch-appointments")
-    public String fetchAppointments() {
-    return "Error fetching appointments";
-    }   
+    @GetMapping("/test-token")
+    public String testToken() {
+        String token = tokenService.getBearerToken();
+        return token != null ? "Token: " + token : "Failed to fetch token";
+    }
 }
