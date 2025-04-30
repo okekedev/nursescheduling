@@ -36,7 +36,7 @@ public class ApiController {
     public Map<String, Object> getNurse() {
         Map<String, Object> response = new HashMap<>();
         try {
-           Resource resource = resourceLoader.getResource("classpath:static/json/workers.json");
+           Resource resource = resourceLoader.getResource("classpath:static/JSON/workers.json");
             ObjectMapper mapper = new ObjectMapper();
             Map<String, Object> workersData = mapper.readValue(resource.getInputStream(), Map.class);
             List<Map<String, Object>> workers = (List<Map<String, Object>>) workersData.get("workers");
@@ -63,7 +63,7 @@ public class ApiController {
     public Map<String, Object> getPatients() {
         Map<String, Object> response = new HashMap<>();
         try {
-            Resource resource = resourceLoader.getResource("classpath:static/json/patients.json");
+            Resource resource = resourceLoader.getResource("classpath:static/JSON/patients.json");
             ObjectMapper mapper = new ObjectMapper();
             Map<String, Object> patientsData = mapper.readValue(resource.getInputStream(), Map.class);
             List<Map<String, Object>> patients = (List<Map<String, Object>>) patientsData.get("patients");
