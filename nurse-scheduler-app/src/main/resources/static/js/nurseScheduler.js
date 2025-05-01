@@ -1,109 +1,162 @@
 function nurseScheduler() {
-    return {
-        nurse: null,
-        patients: [],
-        map: null,
-        routeLayer: null,
-        totalDistance: 0,
+  return {
+    nurses: [],
+    selectedNurseId: null,
+    patients: [],
+    selectedPatientIds: [],
+    map: null,
+    nurseLayer: null,
+    patientLayer: null,
 
-        async init() {
-            // Prevent reinitialization of the map
-            if (this.map) {
-                return;
-            }
+    async init() {
+      if (this.map) return;
 
-            // Initialize the Leaflet map
-            this.map = L.map('map').setView([31.0, -99.0], 6); // Default to central Texas if nurse data isn't available
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(this.map);
+      this.map = L.map("map").setView([31.0, -99.0], 6);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(this.map);
 
-            // Fetch nurse and patients data
-            await this.fetchData();
+      await this.fetchData();
+      this.updateMap();
+    },
 
-            // Set map view to nurse's location if available
-            if (this.nurse && this.nurse.latitude && this.nurse.longitude) {
-                this.map.setView([this.nurse.latitude, this.nurse.longitude], 10);
-                L.marker([this.nurse.latitude, this.nurse.longitude])
-                    .addTo(this.map)
-                    .bindPopup(this.nurse.name || 'Nurse')
-                    .openPopup();
-            }
-
-            // Add patient markers if available
-            if (this.patients && Array.isArray(this.patients)) {
-                this.patients.forEach(patient => {
-                    if (patient.latitude && patient.longitude) {
-                        L.marker([patient.latitude, patient.longitude])
-                            .addTo(this.map)
-                            .bindPopup(patient.name || 'Patient');
-                    }
-                });
-            }
-        },
-
-        async fetchData() {
-            try {
-                // Fetch nurse data
-                const nurseResponse = await fetch('/api/nurse');
-                const nurseData = await nurseResponse.json();
-                if (nurseData.success) {
-                    this.nurse = nurseData.nurse;
-                } else {
-                    console.error('Error fetching nurse:', nurseData.error);
-                }
-
-                // Fetch patients data
-                const patientsResponse = await fetch('/api/patients');
-                const patientsData = await patientsResponse.json();
-                if (patientsData.success) {
-                    this.patients = patientsData.patients || [];
-                } else {
-                    console.error('Error fetching patients:', patientsData.error);
-                }
-            } catch (error) {
-                console.error('Error fetching data:', error);
-            }
-        },
-
-        async calculateRoute() {
-            if (!this.nurse || !this.patients || !Array.isArray(this.patients)) {
-                console.error('Cannot calculate route: Nurse or patients data is missing');
-                return;
-            }
-
-            if (this.routeLayer) {
-                this.map.removeLayer(this.routeLayer);
-            }
-
-            const points = [
-                [this.nurse.latitude, this.nurse.longitude],
-                ...this.patients.map(p => [p.latitude, p.longitude])
-            ];
-
-            try {
-                const response = await fetch('/api/route', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(points)
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    this.routeLayer = L.polyline(data.coordinates, {
-                        color: 'blue',
-                        weight: 4,
-                        opacity: 0.7
-                    }).addTo(this.map);
-
-                    this.totalDistance = data.distance; // In meters
-                    this.map.fitBounds(this.routeLayer.getBounds(), { padding: [50, 50] });
-                } else {
-                    console.error('Error calculating route:', data.error);
-                }
-            } catch (error) {
-                console.error('Error fetching route from backend:', error);
-            }
+    async fetchData() {
+      try {
+        const nurseResponse = await fetch("/api/nurses");
+        const nurseData = await nurseResponse.json();
+        if (nurseData.success) {
+          this.nurses = nurseData.nurses || [];
+          if (this.nurses.length > 0) {
+            this.selectedNurseId = this.nurses[0].workerId;
+          }
+        } else {
+          console.error("Error fetching nurses:", nurseData.error);
         }
-    };
+
+        await this.fetchPatients();
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    },
+
+    async fetchPatients() {
+      try {
+        const patientsResponse = await fetch(
+          `/api/patients${
+            this.selectedNurseId ? "?workerId=" + this.selectedNurseId : ""
+          }`
+        );
+        const patientsData = await patientsResponse.json();
+        if (patientsData.success) {
+          this.patients = patientsData.patients || [];
+          this.selectedPatientIds = this.patients.map((p) => p.patientId);
+        } else {
+          console.error("Error fetching patients:", patientsData.error);
+        }
+        this.updateMap();
+      } catch (error) {
+        console.error("Error fetching patients:", error);
+      }
+    },
+
+    updateMap() {
+      if (this.nurseLayer) this.map.removeLayer(this.nurseLayer);
+      if (this.patientLayer) this.map.removeLayer(this.patientLayer);
+
+      this.nurseLayer = L.layerGroup().addTo(this.map);
+      this.patientLayer = L.layerGroup().addTo(this.map);
+
+      const selectedNurse = this.nurses.find(
+        (n) => n.workerId === this.selectedNurseId
+      );
+      if (selectedNurse && selectedNurse.coordinates) {
+        L.marker([
+          selectedNurse.coordinates.latitude,
+          selectedNurse.coordinates.longitude,
+        ])
+          .addTo(this.nurseLayer)
+          .bindPopup(`${selectedNurse.firstName} ${selectedNurse.lastName}`)
+          .openPopup();
+        this.map.setView(
+          [
+            selectedNurse.coordinates.latitude,
+            selectedNurse.coordinates.longitude,
+          ],
+          10
+        );
+      }
+
+      this.patients.forEach((patient) => {
+        if (
+          patient.latitude &&
+          patient.longitude &&
+          this.selectedPatientIds.includes(patient.patientId)
+        ) {
+          L.marker([patient.latitude, patient.longitude])
+            .addTo(this.patientLayer)
+            .bindPopup(patient.name);
+        }
+      });
+
+      if (
+        this.nurseLayer.getLayers().length ||
+        this.patientLayer.getLayers().length
+      ) {
+        this.map.fitBounds(
+          L.featureGroup([
+            ...this.nurseLayer.getLayers(),
+            ...this.patientLayer.getLayers(),
+          ]).getBounds(),
+          { padding: [50, 50] }
+        );
+      }
+    },
+
+    async selectNurse(nurseId) {
+      this.selectedNurseId = nurseId;
+      this.selectedPatientIds = [];
+      await this.fetchPatients();
+    },
+
+    togglePatient(patientId) {
+      if (this.selectedPatientIds.includes(patientId)) {
+        this.selectedPatientIds = this.selectedPatientIds.filter(
+          (id) => id !== patientId
+        );
+      } else {
+        this.selectedPatientIds.push(patientId);
+      }
+      this.updateMap();
+    },
+
+    getSelectedCoordinates() {
+      const coordinates = [];
+      const selectedNurse = this.nurses.find(
+        (n) => n.workerId === this.selectedNurseId
+      );
+      if (selectedNurse && selectedNurse.coordinates) {
+        coordinates.push([
+          selectedNurse.coordinates.latitude,
+          selectedNurse.coordinates.longitude,
+        ]);
+      }
+      this.patients.forEach((patient) => {
+        if (
+          this.selectedPatientIds.includes(patient.patientId) &&
+          patient.latitude &&
+          patient.longitude
+        ) {
+          coordinates.push([patient.latitude, patient.longitude]);
+        }
+      });
+      if (selectedNurse && selectedNurse.coordinates) {
+        coordinates.push([
+          selectedNurse.coordinates.latitude,
+          selectedNurse.coordinates.longitude,
+        ]);
+      }
+      return coordinates;
+    },
+  };
 }

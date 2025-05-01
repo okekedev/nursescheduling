@@ -1,6 +1,7 @@
 package nursescheduler.controller;
 
 import nursescheduler.model.Patient;
+// Probably don't need but just incase 
 // import nursescheduler.model.Nurse;
 // import nursescheduler.model.Patient;
 // import nursescheduler.repository.NurseRepository;
@@ -12,9 +13,11 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
@@ -23,34 +26,24 @@ public class ApiController {
     @Autowired
     private GraphHopperService graphHopperService;
 
-    // @Autowired
-    // private NurseRepository nurseRepository;
-
-    // @Autowired
-    // private PatientRepository patientRepository;
-
     @Autowired
-    private ResourceLoader resourceLoader;
+    private final ResourceLoader resourceLoader;
+    private final ObjectMapper objectMapper;
 
-    @GetMapping("/nurse")
-    public Map<String, Object> getNurse() {
+    public ApiController(ResourceLoader resourceLoader, ObjectMapper objectMapper) {
+        this.resourceLoader = resourceLoader;
+        this.objectMapper = objectMapper;
+    }
+
+    @GetMapping("/nurses")
+    public Map<String, Object> getNurses() {
         Map<String, Object> response = new HashMap<>();
         try {
-           Resource resource = resourceLoader.getResource("classpath:static/JSON/workers.json");
+            Resource resource = resourceLoader.getResource("classpath:static/JSON/workers.json");
             ObjectMapper mapper = new ObjectMapper();
-            Map<String, Object> workersData = mapper.readValue(resource.getInputStream(), Map.class);
-            List<Map<String, Object>> workers = (List<Map<String, Object>>) workersData.get("workers");
-            
-            // Take the first worker as the nurse
-            Map<String, Object> nurse = workers.isEmpty() ? new HashMap<>() : workers.get(0);
-            Map<String, Object> nurseResponse = new HashMap<>();
-            nurseResponse.put("name", nurse.get("firstName") + " " + nurse.get("lastName"));
-            Map<String, Object> coordinates = (Map<String, Object>) nurse.get("coordinates");
-            nurseResponse.put("latitude", coordinates.get("latitude"));
-            nurseResponse.put("longitude", coordinates.get("longitude"));
-            
+            List<Map<String, Object>> workers = mapper.readValue(resource.getInputStream(), List.class);
             response.put("success", true);
-            response.put("nurse", nurseResponse);
+            response.put("nurses", workers);
             return response;
         } catch (Exception e) {
             response.put("success", false);
@@ -60,28 +53,29 @@ public class ApiController {
     }
 
     @GetMapping("/patients")
-    public Map<String, Object> getPatients() {
+    public Map<String, Object> getPatients(@RequestParam(required = false) String workerId) {
         Map<String, Object> response = new HashMap<>();
         try {
-            Resource resource = resourceLoader.getResource("classpath:static/JSON/patients.json");
-            ObjectMapper mapper = new ObjectMapper();
-            Map<String, Object> patientsData = mapper.readValue(resource.getInputStream(), Map.class);
-            List<Map<String, Object>> patients = (List<Map<String, Object>>) patientsData.get("patients");
-            
-            // Map patients to include only name, latitude, and longitude
-            List<Map<String, Object>> patientsResponse = patients.stream().map(patient -> {
-                Map<String, Object> patientResponse = new HashMap<>();
-                patientResponse.put("name", patient.get("firstName") + " " + patient.get("lastName"));
-                Map<String, Object> coordinates = (Map<String, Object>) patient.get("coordinates");
-                patientResponse.put("latitude", coordinates.get("latitude"));
-                patientResponse.put("longitude", coordinates.get("longitude"));
-                return patientResponse;
-            }).toList();
-            
+            Resource patientResource = resourceLoader.getResource("classpath:static/json/patients.json");
+            Resource appointmentResource = resourceLoader.getResource("classpath:/static/json/appointments.json");
+            List<Map<String, Object>> patients = objectMapper.readValue(patientResource.getInputStream(), List.class);
+            List<Map<String, Object>> appointments = objectMapper.readValue(appointmentResource.getInputStream(), List.class);
+
+            List<Map<String, Object>> filteredPatients = patients;
+            if (workerId != null) {
+                List<String> patientIds = appointments.stream()
+                .filter(a -> workerId.equals(String.valueOf(a.get("practitionerId"))))
+                .map(a -> String.valueOf(a.get("patientId")))
+                .collect(Collectors.toList());
+                filteredPatients = patients.stream()
+                .filter(p -> patientIds.contains(String.valueOf(p.get("patientId"))))
+                .collect(Collectors.toList());
+            }
+
             response.put("success", true);
-            response.put("patients", patientsResponse);
+            response.put("patients", filteredPatients);
             return response;
-        } catch (Exception e) {
+        } catch (IOException e) {
             response.put("success", false);
             response.put("error", e.getMessage());
             return response;

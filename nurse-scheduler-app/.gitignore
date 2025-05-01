@@ -14,4 +14,4 @@ target/
 # Ignore local environment files
 .env
 
-src/main/resources/static/JSON/
+src/main/resources/static/json/
