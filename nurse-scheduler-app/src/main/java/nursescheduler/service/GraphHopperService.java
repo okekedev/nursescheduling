@@ -23,7 +23,7 @@ import com.graphhopper.util.PointList;
 import com.graphhopper.json.Statement;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
