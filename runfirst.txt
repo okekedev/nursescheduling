@@ -1,0 +1,6 @@
+mvn spring-boot:run
+
+
+
+chmod +x setup-graphhopper.sh
+./setup-graphhopper.sh
