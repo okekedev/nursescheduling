@@ -1,0 +1,93 @@
+# Large data files
+graphhopper-standalone/
+nurse-scheduler-app/graphhopper-standalone/
+**/texas-latest.osm.pbf
+**/graph-cache/
+**/photon.jar
+photon/data/
+photon/photon*.jar
+
+# Generated data and caches
+src/main/resources/graphhopper/graph-cache/
+**/graph-cache/
+**/node_modules/
+**/generated/
+
+# Local tile cache
+tile-cache/
+map-tiles/
+**/tiles/
+
+# Maven build output
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.metadata/
+bin/
+.factorypath
+nbproject/
+nb-configuration.xml
+
+# Local environment files
+.env
+*.env
+*.properties.local
+application-dev.properties
+application-local.properties
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.stackdump
+
+# JSON data (can contain sensitive info)
+src/main/resources/static/JSON/
+src/main/java/static/JSON/
+
+# Database files
+*.db
+*.sqlite
+*.h2.db
+*.mv.db
+*.trace.db
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+.temp/
+.cache/
+temp/
+tmp/
+
+# Specific large directories in your project
+photon/
+**/graphhopper/
+
+# Application specific
+*.osm.pbf
+*.mbtiles
+**/graphhopper-standalone/
+nurse-scheduler-app/graphhopper-standalone/

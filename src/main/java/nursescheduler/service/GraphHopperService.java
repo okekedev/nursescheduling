@@ -1,9 +1,7 @@
 package nursescheduler.service;
 
-import com.graphhopper.GHRequest;
-import com.graphhopper.GHResponse;
-import com.graphhopper.GraphHopper;
-import com.graphhopper.config.Profile;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.graphhopper.jsprit.core.algorithm.VehicleRoutingAlgorithm;
 import com.graphhopper.jsprit.core.algorithm.box.Jsprit;
 import com.graphhopper.jsprit.core.problem.Location;
@@ -18,46 +16,25 @@ import com.graphhopper.jsprit.core.problem.vehicle.VehicleType;
 import com.graphhopper.jsprit.core.problem.vehicle.VehicleTypeImpl;
 import com.graphhopper.jsprit.core.util.Coordinate;
 import com.graphhopper.jsprit.core.util.Solutions;
-import com.graphhopper.util.CustomModel;
-import com.graphhopper.util.PointList;
-import com.graphhopper.json.Statement;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
-import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class GraphHopperService {
 
-    private GraphHopper graphHopper;
+    @Value("${graphhopper.url:http://localhost:8989}")
+    private String graphHopperUrl;
+    
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private static final int WEIGHT_INDEX = 0;
-
-    @PostConstruct
-    public void init() {
-        graphHopper = new GraphHopper();
-        graphHopper.setOSMFile("src/main/resources/graphhopper/texas-latest.osm.pbf");
-        graphHopper.setGraphHopperLocation("src/main/resources/graphhopper/graph-cache");
-
-        // Set the encoded values used in the CustomModel
-        graphHopper.setEncodedValuesString("road_access");
-
-        // Define a custom model to handle road_access == DESTINATION and distance_influence
-        CustomModel customModel = new CustomModel();
-        customModel.addToSpeed(Statement.If("true", Statement.Op.LIMIT, "50"));  // Default speed: 50 km/h
-        customModel.addToPriority(Statement.If("road_access == DESTINATION", Statement.Op.MULTIPLY, "0"));
-        customModel.setDistanceInfluence(1000.0);
-
-        // Define a profile with custom weighting
-        Profile carProfile = new Profile("car")
-            .setWeighting("custom")
-            .setCustomModel(customModel);
-
-        graphHopper.setProfiles(Collections.singletonList(carProfile));
-        graphHopper.importOrLoad();
-    }
 
     public RouteResponse calculateRoute(List<double[]> points) {
         try {
@@ -128,25 +105,45 @@ public class GraphHopperService {
                                                route.getEnd().getLocation().getCoordinate().getY()});
             }
 
-            // Use GraphHopper to calculate the actual road path for the ordered points
+            // Use standalone GraphHopper to calculate the actual road path for the ordered points
             List<double[]> coordinates = new ArrayList<>();
             double totalDistance = 0.0;
+            
             for (int i = 0; i < orderedPoints.size() - 1; i++) {
-                GHRequest request = new GHRequest();
-                request.addPoint(new com.graphhopper.util.shapes.GHPoint(orderedPoints.get(i)[0], orderedPoints.get(i)[1]));
-                request.addPoint(new com.graphhopper.util.shapes.GHPoint(orderedPoints.get(i + 1)[0], orderedPoints.get(i + 1)[1]));
-                request.setProfile("car");
+                // Build GraphHopper REST API request URL
+                String url = String.format("%s/route?point=%.6f,%.6f&point=%.6f,%.6f&vehicle=car&calc_points=true&points_encoded=false",
+                    graphHopperUrl,
+                    orderedPoints.get(i)[0], orderedPoints.get(i)[1],
+                    orderedPoints.get(i + 1)[0], orderedPoints.get(i + 1)[1]);
+                
+                ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+                
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    // Parse GraphHopper response
+                    try {
+                        Map<String, Object> responseMap = objectMapper.readValue(response.getBody(), Map.class);
+                        List<Map<String, Object>> paths = (List<Map<String, Object>>) responseMap.get("paths");
+                        
+                        if (paths != null && !paths.isEmpty()) {
+                            Map<String, Object> path = paths.get(0);
+                            totalDistance += ((Number) path.get("distance")).doubleValue();
+                            
+                            // Extract points from the response
+List<List<Double>> pointsFromResponse = (List<List<Double>>) path.get("points");
 
-                GHResponse response = graphHopper.route(request);
-                if (response.hasErrors()) {
-                    throw new RuntimeException("Error calculating route segment: " + response.getErrors());
+if (pointsFromResponse != null) {
+    for (List<Double> point : pointsFromResponse) {
+        // GraphHopper returns [lon, lat], but we need [lat, lon]
+        coordinates.add(new double[]{point.get(1), point.get(0)});
+    }
+}
+                        }
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException("Error parsing GraphHopper response: " + e.getMessage(), e);
+                    }
+                } else {
+                    throw new RuntimeException("Error from GraphHopper API: " + response.getStatusCode());
                 }
-
-                PointList routePoints = response.getBest().getPoints();
-                for (int j = 0; j < routePoints.size(); j++) {
-                    coordinates.add(new double[]{routePoints.getLat(j), routePoints.getLon(j)});
-                }
-                totalDistance += response.getBest().getDistance();
             }
 
             return new RouteResponse(coordinates, totalDistance);
