@@ -8,32 +8,12 @@ NC='\033[0m' # No Color
 
 echo -e "${YELLOW}Starting all services for Nurse Scheduler application...${NC}"
 
-# Check if we're in the nurse-scheduler-app directory
-if [ "$(basename "$(pwd)")" = "nurse-scheduler-app" ]; then
-    # We're in the nurse-scheduler-app directory, so set paths accordingly
-    CURRENT_DIR="."
-    PARENT_DIR=".."
-    LOG_DIR="../logs"
-    # Look for Photon in current directory first, then parent
-    if [ -f "./photon/photon.jar" ]; then
-        PHOTON_DIR="./photon"
-    else
-        PHOTON_DIR="../photon"
-    fi
-    # Look for GraphHopper in current directory first, then parent
-    if [ -f "./graphhopper-standalone/graphhopper.jar" ]; then
-        GRAPHHOPPER_DIR="./graphhopper-standalone"
-    else
-        GRAPHHOPPER_DIR="../graphhopper-standalone"
-    fi
-else
-    # We're in the parent directory
-    CURRENT_DIR="."
-    PARENT_DIR="."
-    LOG_DIR="./logs"
-    PHOTON_DIR="./photon"
-    GRAPHHOPPER_DIR="./graphhopper-standalone"
-fi
+# Set paths for the flattened directory structure
+CURRENT_DIR="."
+PARENT_DIR="."
+LOG_DIR="./logs"
+PHOTON_DIR="./photon"
+GRAPHHOPPER_DIR="./graphhopper-standalone"
 
 # Create log directories
 mkdir -p $LOG_DIR
@@ -54,13 +34,20 @@ if [ ! -f "${PHOTON_DIR}/photon.jar" ]; then
     else
         echo "  Directory ./photon does not exist"
     fi
-    echo -e "${YELLOW}Files in ../photon (if exists):${NC}"
-    if [ -d "../photon" ]; then
-        ls -la ../photon
+    
+    # Ask if user wants to run setup-photon.sh
+    echo -e "${YELLOW}Would you like to run setup-photon.sh to set up Photon? (y/n)${NC}"
+    read -r response
+    if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        echo -e "${YELLOW}Running setup-photon.sh...${NC}"
+        ./setup-photon.sh
+        if [ ! -f "${PHOTON_DIR}/photon.jar" ]; then
+            echo -e "${RED}Photon setup failed. Please run setup-photon.sh manually.${NC}"
+            exit 1
+        fi
     else
-        echo "  Directory ../photon does not exist"
+        exit 1
     fi
-    exit 1
 fi
 
 # Check if Photon is already running
@@ -104,69 +91,70 @@ if curl -s "http://localhost:8989/maps/" > /dev/null 2>&1; then
     echo -e "${GREEN}GraphHopper is already running on port 8989${NC}"
 else
     # Check if GraphHopper has been set up
-    if [ -f "${GRAPHHOPPER_DIR}/graphhopper.jar" ] && [ -f "${GRAPHHOPPER_DIR}/config.yml" ]; then
-        echo -e "${YELLOW}Starting GraphHopper...${NC}"
-        cd "${GRAPHHOPPER_DIR}"
-        java -jar graphhopper.jar server config.yml > "${PARENT_DIR}/${LOG_DIR}/graphhopper.log" 2>&1 &
-        GRAPHHOPPER_PID=$!
-        cd - > /dev/null # Return to previous directory silently
-        echo -e "${GREEN}GraphHopper started with PID ${GRAPHHOPPER_PID}${NC}"
-        
-        # Wait for GraphHopper to be ready (with a timeout)
-        echo -e "${YELLOW}Waiting for GraphHopper to be ready (max 60 seconds)...${NC}"
-        COUNTER=0
-        MAX_TRIES=60
-        while ! curl -s "http://localhost:8989/maps/" > /dev/null 2>&1; do
-            sleep 1
-            COUNTER=$((COUNTER+1))
-            if [ $COUNTER -ge $MAX_TRIES ]; then
-                echo -e "${YELLOW}GraphHopper is taking longer than expected to start, but continuing with other services...${NC}"
-                break
-            fi
-        done
-        
-        if [ $COUNTER -lt $MAX_TRIES ]; then
-            echo -e "${GREEN}GraphHopper is ready!${NC}"
+    if [ ! -f "${GRAPHHOPPER_DIR}/graphhopper.jar" ] || [ ! -f "${GRAPHHOPPER_DIR}/config.yml" ]; then
+        echo -e "${YELLOW}GraphHopper is not set up. Running setup-graphhopper.sh...${NC}"
+        ./setup-graphhopper.sh
+        if [ ! -f "${GRAPHHOPPER_DIR}/graphhopper.jar" ] || [ ! -f "${GRAPHHOPPER_DIR}/config.yml" ]; then
+            echo -e "${RED}GraphHopper setup failed. Please run setup-graphhopper.sh manually.${NC}"
+            exit 1
         fi
-    else
-        echo -e "${RED}GraphHopper is not set up. Please run setup-graphhopper.sh first.${NC}"
-        exit 1
+    fi
+    
+    echo -e "${YELLOW}Starting GraphHopper...${NC}"
+    
+    # Create the log file first to avoid "No such file" error
+    touch "${LOG_DIR}/graphhopper.log"
+    
+    # Use a consistent approach to running GraphHopper and logging
+    cd "${GRAPHHOPPER_DIR}"
+    java -jar graphhopper.jar server config.yml > "../${LOG_DIR}/graphhopper.log" 2>&1 &
+    GRAPHHOPPER_PID=$!
+    cd ..
+    
+    echo -e "${GREEN}GraphHopper started with PID ${GRAPHHOPPER_PID}${NC}"
+    
+    # Wait for GraphHopper to be ready (with a timeout)
+    echo -e "${YELLOW}Waiting for GraphHopper to be ready (max 60 seconds)...${NC}"
+    COUNTER=0
+    MAX_TRIES=60
+    while ! curl -s "http://localhost:8989/maps/" > /dev/null 2>&1; do
+        sleep 1
+        COUNTER=$((COUNTER+1))
+        if [ $COUNTER -ge $MAX_TRIES ]; then
+            echo -e "${YELLOW}GraphHopper is taking longer than expected to start, but continuing with other services...${NC}"
+            break
+        fi
+        
+        # Display a progress indicator every 5 seconds
+        if [ $((COUNTER % 5)) -eq 0 ]; then
+            echo -n "."
+        fi
+    done
+    echo ""  # Add a newline after the progress indicators
+    
+    if [ $COUNTER -lt $MAX_TRIES ]; then
+        echo -e "${GREEN}GraphHopper is ready!${NC}"
     fi
 fi
 
 # Start Spring Boot application
 echo -e "${YELLOW}Starting Spring Boot application...${NC}"
-if [ "$(basename "$(pwd)")" = "nurse-scheduler-app" ]; then
-    # Already in the right directory
-    # Try different Maven command options
-    if [ -f "./mvnw" ]; then
-        ./mvnw spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
-    elif [ -f "mvnw" ]; then
-        mvnw spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
-    elif command -v mvn &> /dev/null; then
-        mvn spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
-    else
-        echo -e "${RED}Error: Could not find Maven or Maven Wrapper script${NC}"
-        exit 1
-    fi
-    APP_PID=$!
+
+# Create log file
+touch "${LOG_DIR}/app.log"
+
+# Try different Maven command options
+if command -v mvn &> /dev/null; then
+    mvn spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
+elif [ -f "./mvnw" ]; then
+    ./mvnw spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
+elif [ -f "mvnw" ]; then
+    mvnw spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
 else
-    # Need to change directory
-    cd nurse-scheduler-app
-    # Try different Maven command options
-    if [ -f "./mvnw" ]; then
-        ./mvnw spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
-    elif [ -f "mvnw" ]; then
-        mvnw spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
-    elif command -v mvn &> /dev/null; then
-        mvn spring-boot:run > "${LOG_DIR}/app.log" 2>&1 &
-    else
-        echo -e "${RED}Error: Could not find Maven or Maven Wrapper script${NC}"
-        exit 1
-    fi
-    APP_PID=$!
-    cd - > /dev/null # Return to previous directory silently
+    echo -e "${RED}Error: Could not find Maven or Maven Wrapper script${NC}"
+    exit 1
 fi
+APP_PID=$!
 echo -e "${GREEN}Spring Boot application started with PID ${APP_PID}${NC}"
 
 # Save PIDs to a file for stopping later

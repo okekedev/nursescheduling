@@ -6,132 +6,95 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${YELLOW}Stopping all services for Nurse Scheduler application...${NC}"
+# Create logs directory if it doesn't exist
+mkdir -p logs
 
-# Check if we're in the nurse-scheduler-app directory
-if [ "$(basename "$(pwd)")" = "nurse-scheduler-app" ]; then
-    # We're in the nurse-scheduler-app directory
-    PID_FILE="./.service_pids"
-    if [ ! -f "$PID_FILE" ]; then
-        PID_FILE="../.service_pids"
-    fi
+echo -e "${YELLOW}Starting all services for Nurse Scheduler...${NC}"
+
+# Check if Photon is already running
+echo -e "Checking if Photon is running..."
+PHOTON_RUNNING=false
+if pgrep -f "photon.jar" > /dev/null; then
+    echo -e "${GREEN}Photon is already running.${NC}"
+    PHOTON_RUNNING=true
 else
-    # We're in the parent directory
-    PID_FILE="./.service_pids"
+    echo -e "Starting Photon geocoding service..."
+    cd photon
+    nohup java -jar photon.jar > ../logs/photon.log 2>&1 &
+    PHOTON_PID=$!
+    echo -e "Photon started with PID $PHOTON_PID"
+    cd ..
+    
+    # Check if photon started correctly
+    echo -e "Waiting for Photon to be ready (max 30 seconds)..."
+    COUNTER=0
+    while ! curl -s http://localhost:2322/ > /dev/null && [ $COUNTER -lt 30 ]; do
+        sleep 1
+        COUNTER=$((COUNTER+1))
+    done
+    
+    if curl -s http://localhost:2322/ > /dev/null; then
+        echo -e "${GREEN}Photon is ready!${NC}"
+    else
+        echo -e "${RED}Photon failed to start within 30 seconds!${NC}"
+        echo -e "Check logs at logs/photon.log for details."
+        exit 1
+    fi
 fi
 
-# Check if PID file exists
-if [ ! -f "$PID_FILE" ]; then
-    echo -e "${YELLOW}No service PIDs file found. Will try to find and kill processes by port.${NC}"
-    
-    # Try to find Spring Boot application by port
-    SPRING_PID=$(lsof -i:8080 -t 2>/dev/null)
-    if [ -n "$SPRING_PID" ]; then
-        echo -e "${YELLOW}Stopping Spring Boot application (PID: $SPRING_PID)...${NC}"
-        kill -15 $SPRING_PID 2>/dev/null || kill -9 $SPRING_PID 2>/dev/null
-        echo -e "${GREEN}Spring Boot application stopped.${NC}"
-    else
-        echo -e "${YELLOW}No Spring Boot application found running on port 8080.${NC}"
-    fi
-    
-    # Try to find GraphHopper by port
-    GRAPHHOPPER_PID=$(lsof -i:8989 -t 2>/dev/null)
-    if [ -n "$GRAPHHOPPER_PID" ]; then
-        echo -e "${YELLOW}Stopping GraphHopper (PID: $GRAPHHOPPER_PID)...${NC}"
-        kill -15 $GRAPHHOPPER_PID 2>/dev/null || kill -9 $GRAPHHOPPER_PID 2>/dev/null
-        echo -e "${GREEN}GraphHopper stopped.${NC}"
-    else
-        echo -e "${YELLOW}No GraphHopper instance found running on port 8989.${NC}"
-    fi
-    
-    # Try to find Photon by port
-    PHOTON_PID=$(lsof -i:2322 -t 2>/dev/null)
-    if [ -n "$PHOTON_PID" ]; then
-        echo -e "${YELLOW}Stopping Photon (PID: $PHOTON_PID)...${NC}"
-        kill -15 $PHOTON_PID 2>/dev/null || kill -9 $PHOTON_PID 2>/dev/null
-        echo -e "${GREEN}Photon stopped.${NC}"
-    else
-        echo -e "${YELLOW}No Photon instance found running on port 2322.${NC}"
-    fi
+# Check if GraphHopper is already running
+echo -e "Checking if GraphHopper is running..."
+GH_RUNNING=false
+if pgrep -f "graphhopper.jar" > /dev/null; then
+    echo -e "${GREEN}GraphHopper is already running.${NC}"
+    GH_RUNNING=true
 else
-    # Read PIDs from file
-    echo -e "${YELLOW}Reading service PIDs from $PID_FILE...${NC}"
-    IFS=$'\r\n' PIDS=($(cat "$PID_FILE"))
+    echo -e "Starting GraphHopper..."
+    cd graphhopper-standalone
+    nohup java -jar graphhopper.jar server config.yml > ../logs/graphhopper.log 2>&1 &
+    GH_PID=$!
+    echo -e "GraphHopper started with PID $GH_PID"
+    cd ..
     
-    # Stop Photon
-    if [ "${PIDS[0]}" != "already_running" ]; then
-        echo -e "${YELLOW}Stopping Photon (PID: ${PIDS[0]})...${NC}"
-        kill -15 ${PIDS[0]} 2>/dev/null || kill -9 ${PIDS[0]} 2>/dev/null
-        echo -e "${GREEN}Photon stopped.${NC}"
-    else
-        echo -e "${YELLOW}Photon was already running before script started.${NC}"
-        PHOTON_PID=$(lsof -i:2322 -t 2>/dev/null)
-        if [ -n "$PHOTON_PID" ]; then
-            echo -e "${YELLOW}Stopping Photon (PID: $PHOTON_PID)...${NC}"
-            kill -15 $PHOTON_PID 2>/dev/null || kill -9 $PHOTON_PID 2>/dev/null
-            echo -e "${GREEN}Photon stopped.${NC}"
+    # Check if GraphHopper started correctly (this may take some time)
+    echo -e "Waiting for GraphHopper to be ready (max 60 seconds)..."
+    COUNTER=0
+    while ! curl -s http://localhost:8989/ > /dev/null && [ $COUNTER -lt 60 ]; do
+        sleep 1
+        COUNTER=$((COUNTER+1))
+        # Display a progress indicator
+        if [ $((COUNTER % 5)) -eq 0 ]; then
+            echo -n "."
         fi
-    fi
+    done
+    echo ""
     
-    # Stop GraphHopper
-    if [ "${PIDS[1]}" != "already_running" ]; then
-        echo -e "${YELLOW}Stopping GraphHopper (PID: ${PIDS[1]})...${NC}"
-        kill -15 ${PIDS[1]} 2>/dev/null || kill -9 ${PIDS[1]} 2>/dev/null
-        echo -e "${GREEN}GraphHopper stopped.${NC}"
+    if curl -s http://localhost:8989/ > /dev/null; then
+        echo -e "${GREEN}GraphHopper is ready!${NC}"
     else
-        echo -e "${YELLOW}GraphHopper was already running before script started.${NC}"
-        GRAPHHOPPER_PID=$(lsof -i:8989 -t 2>/dev/null)
-        if [ -n "$GRAPHHOPPER_PID" ]; then
-            echo -e "${YELLOW}Stopping GraphHopper (PID: $GRAPHHOPPER_PID)...${NC}"
-            kill -15 $GRAPHHOPPER_PID 2>/dev/null || kill -9 $GRAPHHOPPER_PID 2>/dev/null
-            echo -e "${GREEN}GraphHopper stopped.${NC}"
-        fi
+        echo -e "${YELLOW}GraphHopper may still be initializing. This is normal for the first run.${NC}"
+        echo -e "Check logs at logs/graphhopper.log for details."
+        echo -e "You can continue with the application startup, but routing may not work immediately."
     fi
-    
-    # Stop Spring Boot application
-    if [ -n "${PIDS[2]}" ]; then
-        echo -e "${YELLOW}Stopping Spring Boot application (PID: ${PIDS[2]})...${NC}"
-        kill -15 ${PIDS[2]} 2>/dev/null || kill -9 ${PIDS[2]} 2>/dev/null
-        echo -e "${GREEN}Spring Boot application stopped.${NC}"
-    else
-        echo -e "${YELLOW}No Spring Boot application PID found in PID file.${NC}"
-        SPRING_PID=$(lsof -i:8080 -t 2>/dev/null)
-        if [ -n "$SPRING_PID" ]; then
-            echo -e "${YELLOW}Stopping Spring Boot application (PID: $SPRING_PID)...${NC}"
-            kill -15 $SPRING_PID 2>/dev/null || kill -9 $SPRING_PID 2>/dev/null
-            echo -e "${GREEN}Spring Boot application stopped.${NC}"
-        fi
-    fi
-    
-    # Remove PID file
-    rm -f "$PID_FILE"
 fi
 
-# Make double-sure all Java processes for these services are stopped
-echo -e "${YELLOW}Checking for any remaining Java processes...${NC}"
+# Start Spring Boot application
+echo -e "${YELLOW}Starting Nurse Scheduler application...${NC}"
+mvn spring-boot:run
 
-# Get all Java processes
-JAVA_PROCESSES=$(ps -ef | grep java | grep -v grep)
+# Note: The script will not reach this point until the Spring Boot app is terminated
 
-# Check for GraphHopper
-if echo "$JAVA_PROCESSES" | grep -q "graphhopper.jar"; then
-    GH_PID=$(echo "$JAVA_PROCESSES" | grep "graphhopper.jar" | awk '{print $2}')
-    echo -e "${YELLOW}Found GraphHopper still running (PID: $GH_PID). Stopping...${NC}"
-    kill -15 $GH_PID 2>/dev/null || kill -9 $GH_PID 2>/dev/null
+# Cleanup - only stop services that were started by this script
+echo -e "${YELLOW}Cleaning up...${NC}"
+
+if [ "$GH_RUNNING" = false ] && pgrep -f "graphhopper.jar" > /dev/null; then
+    echo -e "Stopping GraphHopper..."
+    pkill -f "graphhopper.jar"
 fi
 
-# Check for Photon
-if echo "$JAVA_PROCESSES" | grep -q "photon.jar"; then
-    PHOTON_PID=$(echo "$JAVA_PROCESSES" | grep "photon.jar" | awk '{print $2}')
-    echo -e "${YELLOW}Found Photon still running (PID: $PHOTON_PID). Stopping...${NC}"
-    kill -15 $PHOTON_PID 2>/dev/null || kill -9 $PHOTON_PID 2>/dev/null
+if [ "$PHOTON_RUNNING" = false ] && pgrep -f "photon.jar" > /dev/null; then
+    echo -e "Stopping Photon..."
+    pkill -f "photon.jar"
 fi
 
-# Check for Spring Boot
-if echo "$JAVA_PROCESSES" | grep -q "spring-boot:run"; then
-    SPRING_PID=$(echo "$JAVA_PROCESSES" | grep "spring-boot:run" | awk '{print $2}')
-    echo -e "${YELLOW}Found Spring Boot still running (PID: $SPRING_PID). Stopping...${NC}"
-    kill -15 $SPRING_PID 2>/dev/null || kill -9 $SPRING_PID 2>/dev/null
-fi
-
-echo -e "${GREEN}All services stopped successfully!${NC}"
+echo -e "${GREEN}All services stopped.${NC}"

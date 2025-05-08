@@ -1,0 +1,22 @@
+
+***First you need to run the setup scripts and the Maven command below***
+
+
+For the main app: 
+mvn spring-boot:run
+
+
+For the Graphhopper Maps Specifically:
+chmod +x setup-graphhopper.sh
+./setup-graphhopper.sh
+
+
+For the Photon setup ()
+chmod +x setup-photon.sh
+./setup-photon.sh
+
+
+Start All Services
+./start-all-services.sh
+
+
