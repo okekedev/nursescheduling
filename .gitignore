@@ -85,6 +85,7 @@ tmp/
 # Specific large directories in your project
 photon/
 **/graphhopper/
+*.service_pids
 
 # Application specific
 *.osm.pbf
