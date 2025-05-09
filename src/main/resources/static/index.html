@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nurse Scheduler Map</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="/css/styles.css"/>
+</head>
+<body>
+    <div x-data="nurseScheduler()" x-init="init()">
+        <div class="container">
+            <div class="sidebar">
+                <h1>Nurse Scheduler</h1>
+                
+                <!-- Nurse Selection Dropdown -->
+                <div class="nurse-select">
+                    <label for="nurse-dropdown">Select Nurse:</label>
+                    <select id="nurse-dropdown" x-model="selectedNurseId" @change="selectNurse()">
+                        <option value="">Select a nurse</option>
+                        <template x-for="n in nurses" :key="n.id">
+                            <option :value="n.id" x-text="n.name"></option>
+                        </template>
+                    </select>
+                </div>
+                
+                <!-- Nurse Info Card -->
+                <div class="nurse-info" x-show="nurse">
+                    <h2 x-text="nurse ? nurse.name : 'Not selected'"></h2>
+                    <p>Today's Visits: <strong x-text="patients ? patients.length : 0"></strong></p>
+                    <p>Total Distance: <strong x-text="totalDistance ? (totalDistance/1000).toFixed(1) + ' km' : 'Not calculated'"></strong></p>
+                </div>
+                
+                <button class="btn" @click="calculateRoute()">Calculate Route</button>
+                
+                <!-- Metrics Display -->
+                <div class="metrics" x-show="totalDistance > 0">
+                    <h3>Route Metrics</h3>
+                    <ul>
+                        <li>Total Distance: <strong x-text="(totalDistance/1000).toFixed(1) + ' km'"></strong></li>
+                        <li>Estimated Drive Time: <strong x-text="calculateDriveTime(totalDistance)"></strong></li>
+                        <li>Patient Visits: <strong x-text="patients.length"></strong></li>
+                        <li>Visit Duration: <strong x-text="calculateTotalVisitTime() + ' min'"></strong></li>
+                        <li>Total Work Time: <strong x-text="calculateTotalWorkTime()"></strong></li>
+                    </ul>
+                </div>
+                
+                <!-- Patient List -->
+                <div class="patient-list" x-show="patients.length > 0">
+                    <h3>Patients</h3>
+                    <template x-for="(patient, index) in patients" :key="patient.id">
+                        <div class="patient-card">
+                            <h4 x-text="patient.name"></h4>
+                            <p x-text="patient.address"></p>
+                            <p>Visit Time: <span x-text="patient.time"></span></p>
+                            <p>Duration: <span x-text="patient.duration + ' min'"></span></p>
+                        </div>
+                    </template>
+                </div>
+            </div>
+            
+            <div class="map-container">
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Alpine.js -->
+    <script src="https://unpkg.com/alpinejs@3.12.0/dist/cdn.min.js" defer></script>
+    <!-- Custom JS -->
+    <script src="/js/nurseScheduler.js"></script>
+</body>
+</html>
