@@ -10,22 +10,19 @@ import org.springframework.stereotype.Component;
 
 import nursescheduler.model.Appointment;
 import nursescheduler.model.Nurse;
+import nursescheduler.model.NurseSchedule;
 import nursescheduler.model.Patient;
 import nursescheduler.repository.AppointmentRepository;
 import nursescheduler.repository.NurseRepository;
+import nursescheduler.repository.NurseScheduleRepository;
 import nursescheduler.repository.PatientRepository;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * Service to initialize data in the database from JSON files
- */
 @Component
 public class DataInitializer implements CommandLineRunner {
 
@@ -42,53 +39,123 @@ public class DataInitializer implements CommandLineRunner {
     private AppointmentRepository appointmentRepository;
     
     @Autowired
+    private NurseScheduleRepository nurseScheduleRepository;
+    
+    @Autowired
+    private NurseScheduleService nurseScheduleService;
+    
+    @Autowired
     private PhotonGeocodingService geocodingService;
     
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Override
     public void run(String... args) {
-        // Only initialize if the database is empty
-        if (nurseRepository.count() == 0 && patientRepository.count() == 0) {
-            System.out.println("Database is empty. Loading data from JSON files...");
-            loadDataFromJson();
-        } else {
-            System.out.println("Database already contains data. Skipping initialization.");
-            
-            // Log count of existing records
-            System.out.println("Existing records: " + nurseRepository.count() + " nurses, " 
-                + patientRepository.count() + " patients, " 
-                + appointmentRepository.count() + " appointments");
+        try {
+            // Only initialize if the database is empty
+            if (nurseRepository.count() == 0 && patientRepository.count() == 0) {
+                System.out.println("Database is empty. Loading data from JSON files...");
+                loadDataFromJson();
+                
+                // Generate schedules for all nurses after data is loaded
+                generateSchedulesForNurses();
+            } else {
+                System.out.println("Database already contains data. Skipping initialization.");
+                
+                // Log count of existing records
+                System.out.println("Existing records: " + nurseRepository.count() + " nurses, " 
+                    + patientRepository.count() + " patients, " 
+                    + appointmentRepository.count() + " appointments, "
+                    + nurseScheduleRepository.count() + " schedules");
+            }
+        } catch (Exception e) {
+            System.err.println("Error in data initialization: " + e.getMessage());
+            e.printStackTrace();
         }
+    }
+    
+    // New method to generate schedules
+    private void generateSchedulesForNurses() {
+        System.out.println("Generating schedules for all nurses...");
+        LocalDate today = LocalDate.now();
+        
+        List<Nurse> fieldNurses = nurseRepository.findAll().stream()
+            .filter(nurse -> nurse.getLatitude() != null && nurse.getLongitude() != null)
+            .collect(Collectors.toList());
+            
+        System.out.println("Found " + fieldNurses.size() + " field nurses with coordinates");
+        
+        for (Nurse nurse : fieldNurses) {
+            try {
+                // Get appointments for today
+                String nurseId = String.valueOf(nurse.getId());
+                
+                // Check if nurse has any appointments
+                List<Appointment> appointments = appointmentRepository.findByPractitionerId(nurseId);
+                
+                if (!appointments.isEmpty()) {
+                    System.out.println("Nurse " + nurse.getName() + " has " + appointments.size() + " appointments, generating schedule...");
+                    NurseSchedule schedule = nurseScheduleService.generateSchedule(nurseId, today);
+                    System.out.println("Generated schedule for " + nurse.getName() + " with ID " + schedule.getId() + 
+                                       " and " + schedule.getPatientVisitOrder().size() + " patient visits");
+                } else {
+                    System.out.println("Nurse " + nurse.getName() + " has no appointments for today");
+                }
+            } catch (Exception e) {
+                System.err.println("Error generating schedule for nurse " + nurse.getName() + ": " + e.getMessage());
+            }
+        }
+        
+        System.out.println("Schedule generation complete. Total schedules: " + nurseScheduleRepository.count());
     }
     
     private void loadDataFromJson() {
         try {
             System.out.println("Loading data from JSON files...");
             
-            // First, load appointments to identify active nurses
-            List<Map<String, Object>> appointmentsList = loadAppointmentsFromJson();
-            if (appointmentsList == null) {
+            // Load workers (nurses) JSON
+            List<Nurse> nurses = loadNursesFromJson();
+            if (nurses == null || nurses.isEmpty()) {
+                System.err.println("Error: No nurses loaded from JSON");
                 return;
             }
             
-            // Create a map of practitioner IDs to appointment counts
-            Map<String, Integer> nurseAppointmentCounts = new HashMap<>();
-            for (Map<String, Object> appointmentData : appointmentsList) {
-                String practitionerId = (String) appointmentData.get("practitionerId");
-                nurseAppointmentCounts.put(practitionerId, nurseAppointmentCounts.getOrDefault(practitionerId, 0) + 1);
+            // Load patients JSON
+            List<Patient> patients = loadPatientsFromJson();
+            if (patients == null || patients.isEmpty()) {
+                System.err.println("Error: No patients loaded from JSON");
+                return;
             }
             
-            System.out.println("Found " + nurseAppointmentCounts.size() + " nurses with appointments");
+            // Load appointments JSON
+            List<Appointment> appointments = loadAppointmentsFromJson();
+            if (appointments == null || appointments.isEmpty()) {
+                System.err.println("Error: No appointments loaded from JSON");
+                return;
+            }
             
-            // Load workers (nurses) JSON
+            // Log loaded data
+            System.out.println("Successfully loaded: " + nurses.size() + " nurses, " + 
+                               patients.size() + " patients, " + 
+                               appointments.size() + " appointments");
+        } catch (Exception e) {
+            System.err.println("Error loading data from JSON: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private List<Nurse> loadNursesFromJson() {
+        try {
             Resource workersResource = resourceLoader.getResource("classpath:static/JSON/workers.json");
             if (!workersResource.exists()) {
-                System.err.println("Workers JSON file not found. Cannot initialize data.");
-                return;
+                System.err.println("Workers JSON file not found at classpath:static/JSON/workers.json");
+                return Collections.emptyList();
             }
             
-            // Fix the type safety issue with proper typing
+            // Log file path and existence check
+            System.out.println("Loading workers from: " + workersResource.getURL());
+            
+            // Parse the JSON
             Map<String, Object> workersData = mapper.readValue(
                 workersResource.getInputStream(), 
                 new TypeReference<Map<String, Object>>() {}
@@ -98,39 +165,29 @@ public class DataInitializer implements CommandLineRunner {
             List<Map<String, Object>> workers = (List<Map<String, Object>>) workersData.get("workers");
             System.out.println("Found " + workers.size() + " workers in JSON file");
             
-            // Convert and save nurses
+            // Convert JSON to Nurse entities
             List<Nurse> nurses = new ArrayList<>();
             int fieldNurses = 0;
             int officeStaff = 0;
             int geocodedNurses = 0;
-            int missingCoordinates = 0;
             
             for (Map<String, Object> worker : workers) {
                 Nurse nurse = new Nurse();
                 
                 // Set nurse ID (use workerId as a string)
                 String workerId = (String) worker.get("workerId");
-                nurse.setId(Long.parseLong(Math.abs(workerId.hashCode()) + "")); // Convert string ID to a numeric ID
+                nurse.setId(Long.parseLong(Math.abs(workerId.hashCode()) + ""));
                 
-                // Set nurse name (firstname + lastname)
+                // Set nurse name
                 String firstName = (String) worker.get("firstName");
                 String lastName = (String) worker.get("lastName");
                 nurse.setName(firstName + " " + lastName);
                 
-                // Determine if this is a field nurse or office staff
-                boolean hasAppointments = nurseAppointmentCounts.containsKey(workerId) && 
-                                          nurseAppointmentCounts.get(workerId) > 0;
+                // All nurses should be considered field staff for this exercise
+                nurse.setFieldStaff(true);
+                fieldNurses++;
                 
-                // Set field nurse flag (we've now added this property to Nurse model)
-                nurse.setFieldStaff(hasAppointments);
-                
-                if (hasAppointments) {
-                    fieldNurses++;
-                } else {
-                    officeStaff++;
-                }
-                
-                // Get address info if available
+                // Get address info
                 String nurseAddress = "";
                 @SuppressWarnings("unchecked")
                 Map<String, Object> address = (Map<String, Object>) worker.get("address");
@@ -147,8 +204,8 @@ public class DataInitializer implements CommandLineRunner {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> coordinates = (Map<String, Object>) worker.get("coordinates");
                 if (coordinates != null && coordinates.containsKey("latitude") && coordinates.containsKey("longitude")) {
-                    Double lat = (Double) coordinates.get("latitude");
-                    Double lng = (Double) coordinates.get("longitude");
+                    Double lat = convertToDouble(coordinates.get("latitude"));
+                    Double lng = convertToDouble(coordinates.get("longitude"));
                     
                     // Only use coordinates if they are not zero or null
                     if (lat != null && lng != null && (Math.abs(lat) > 0.001 || Math.abs(lng) > 0.001)) {
@@ -159,87 +216,56 @@ public class DataInitializer implements CommandLineRunner {
                     }
                 }
                 
-                // Only geocode field nurses with no coordinates but an address
-                if (hasAppointments && !hasCoordinates && !nurseAddress.isEmpty()) {
-                    System.out.println("Geocoding address for field nurse " + nurse.getName() + ": " + nurseAddress);
+                // Geocode address if no coordinates
+                if (!hasCoordinates && !nurseAddress.isEmpty()) {
+                    System.out.println("Geocoding address for nurse " + nurse.getName() + ": " + nurseAddress);
                     hasCoordinates = tryGeocodeAddress(nurse, nurseAddress);
                     if (hasCoordinates) {
                         geocodedNurses++;
-                    } else {
-                        missingCoordinates++;
                     }
-                } else if (hasAppointments && !hasCoordinates) {
-                    // Field nurse with no address and no coordinates
-                    System.out.println("Field nurse " + nurse.getName() + " has no address or coordinates. Cannot determine location.");
-                    missingCoordinates++;
+                }
+                
+                // If still no coordinates, set some default values (for testing only)
+                if (!hasCoordinates) {
+                    // Default to Wichita Falls, TX area with some random offset
+                    double randomLat = 33.9137 + (Math.random() - 0.5) * 0.1;
+                    double randomLng = -98.4934 + (Math.random() - 0.5) * 0.1;
+                    nurse.setLatitude(randomLat);
+                    nurse.setLongitude(randomLng);
+                    System.out.println("Setting default coordinates for nurse " + nurse.getName() + ": " + randomLat + ", " + randomLng);
                 }
                 
                 nurses.add(nurse);
             }
             
+            // Save all nurses
             nurseRepository.saveAll(nurses);
+            
             System.out.println("Loaded " + nurses.size() + " nurses:");
             System.out.println("  - Field nurses: " + fieldNurses);
             System.out.println("  - Office staff: " + officeStaff);
             System.out.println("  - Geocoded: " + geocodedNurses);
-            System.out.println("  - Missing coordinates: " + missingCoordinates);
             
-            // Load patients JSON
-            List<Patient> patients = loadPatientsFromJson();
-            if (patients == null) {
-                return;
-            }
-            
-            // Now process appointments and link to patients and nurses
-            processAppointments(appointmentsList, patients, nurses);
-            
+            return nurses;
         } catch (Exception e) {
-            System.err.println("Error loading data from JSON: " + e.getMessage());
+            System.err.println("Error loading nurses from JSON: " + e.getMessage());
             e.printStackTrace();
-        }
-    }
-    
-    private List<Map<String, Object>> loadAppointmentsFromJson() {
-        try {
-            // Load appointments JSON
-            Resource appointmentsResource = resourceLoader.getResource("classpath:static/JSON/appointments.json");
-            if (!appointmentsResource.exists()) {
-                System.err.println("Appointments JSON file not found. Cannot initialize appointment data.");
-                return null;
-            }
-            
-            // Use TypeReference to fix type safety warning
-            Map<String, Object> appointmentsData = mapper.readValue(
-                appointmentsResource.getInputStream(),
-                new TypeReference<Map<String, Object>>() {}
-            );
-            
-            @SuppressWarnings("unchecked")
-            Map<String, Object> appointmentsContainer = (Map<String, Object>) appointmentsData.get("appointments");
-            
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> appointmentsList = (List<Map<String, Object>>) appointmentsContainer.get("all");
-            
-            System.out.println("Found " + appointmentsList.size() + " appointments in JSON file");
-            
-            return appointmentsList;
-        } catch (Exception e) {
-            System.err.println("Error loading appointments: " + e.getMessage());
-            e.printStackTrace();
-            return null;
+            return Collections.emptyList();
         }
     }
     
     private List<Patient> loadPatientsFromJson() {
         try {
-            // Load patients JSON
             Resource patientsResource = resourceLoader.getResource("classpath:static/JSON/patients.json");
             if (!patientsResource.exists()) {
-                System.err.println("Patients JSON file not found. Cannot initialize data.");
-                return null;
+                System.err.println("Patients JSON file not found at classpath:static/JSON/patients.json");
+                return Collections.emptyList();
             }
             
-            // Use TypeReference to fix type safety warning
+            // Log file path
+            System.out.println("Loading patients from: " + patientsResource.getURL());
+            
+            // Parse the JSON
             Map<String, Object> patientsData = mapper.readValue(
                 patientsResource.getInputStream(),
                 new TypeReference<Map<String, Object>>() {}
@@ -250,7 +276,7 @@ public class DataInitializer implements CommandLineRunner {
             
             System.out.println("Found " + patientsList.size() + " patients in JSON file");
             
-            // Convert and save patients
+            // Convert JSON to Patient entities
             List<Patient> patients = new ArrayList<>();
             int geocodedPatients = 0;
             int patientsMissingCoordinates = 0;
@@ -260,7 +286,7 @@ public class DataInitializer implements CommandLineRunner {
                 
                 // Set patient ID
                 String patientId = (String) patientData.get("patientId");
-                patient.setId(Long.parseLong(Math.abs(patientId.hashCode()) + "")); // Convert string ID to a numeric ID
+                patient.setId(Long.parseLong(Math.abs(patientId.hashCode()) + ""));
                 
                 // Set patient name
                 String firstName = (String) patientData.get("firstName");
@@ -272,6 +298,9 @@ public class DataInitializer implements CommandLineRunner {
                 String city = (String) patientData.get("city");
                 String state = (String) patientData.get("state");
                 String zip = (String) patientData.get("zip");
+                patient.setCity(city);
+                patient.setState(state);
+                patient.setZip(zip);
                 
                 // Set full address for display and routing
                 String fullAddress = street + ", " + city + ", " + state + " " + zip;
@@ -282,8 +311,8 @@ public class DataInitializer implements CommandLineRunner {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> coordinates = (Map<String, Object>) patientData.get("coordinates");
                 if (coordinates != null && coordinates.containsKey("latitude") && coordinates.containsKey("longitude")) {
-                    Double lat = (Double) coordinates.get("latitude");
-                    Double lng = (Double) coordinates.get("longitude");
+                    Double lat = convertToDouble(coordinates.get("latitude"));
+                    Double lng = convertToDouble(coordinates.get("longitude"));
                     
                     // Only use coordinates if they are not zero or null
                     if (lat != null && lng != null && (Math.abs(lat) > 0.001 || Math.abs(lng) > 0.001)) {
@@ -294,7 +323,7 @@ public class DataInitializer implements CommandLineRunner {
                     }
                 }
                 
-                // If no coordinates but has address, geocode with multiple fallback strategies
+                // Geocode address if no coordinates
                 if (!hasCoordinates && !fullAddress.isEmpty()) {
                     System.out.println("Geocoding address for patient " + patient.getName() + ": " + fullAddress);
                     hasCoordinates = tryGeocodePatientAddress(patient, street, city, state, zip);
@@ -303,73 +332,136 @@ public class DataInitializer implements CommandLineRunner {
                     } else {
                         patientsMissingCoordinates++;
                     }
-                } else if (!hasCoordinates) {
-                    // No address and no coordinates
-                    System.out.println("No coordinates for patient " + patient.getName() + ". Cannot determine location.");
-                    patientsMissingCoordinates++;
                 }
                 
-                // Set default time and duration
-                patient.setTime("09:00 AM"); // Will be updated by appointments
-                patient.setDuration(30);     // Will be updated by appointments
+                // If still no coordinates, set some default values (for testing only)
+                if (!hasCoordinates) {
+                    // Default to Wichita Falls, TX area with some random offset
+                    double randomLat = 33.9137 + (Math.random() - 0.5) * 0.1;
+                    double randomLng = -98.4934 + (Math.random() - 0.5) * 0.1;
+                    patient.setLatitude(randomLat);
+                    patient.setLongitude(randomLng);
+                    System.out.println("Setting default coordinates for patient " + patient.getName() + ": " + randomLat + ", " + randomLng);
+                }
+                
+                // Set default time and duration (will be updated by appointments)
+                patient.setTime("09:00 AM");
+                patient.setDuration(30);
                 
                 patients.add(patient);
             }
             
+            // Save all patients
             patientRepository.saveAll(patients);
-            System.out.println("Loaded " + patients.size() + " patients (" + geocodedPatients + " geocoded, " + patientsMissingCoordinates + " missing coordinates)");
+            
+            System.out.println("Loaded " + patients.size() + " patients (" + geocodedPatients + " geocoded, " + patientsMissingCoordinates + " with default coordinates)");
             return patients;
         } catch (Exception e) {
-            System.err.println("Error loading patients: " + e.getMessage());
+            System.err.println("Error loading patients from JSON: " + e.getMessage());
             e.printStackTrace();
-            return null;
+            return Collections.emptyList();
         }
     }
     
-    private void processAppointments(List<Map<String, Object>> appointmentsList, List<Patient> patients, List<Nurse> nurses) {
+    private List<Appointment> loadAppointmentsFromJson() {
         try {
-            // DateTimeFormatter for parsing appointment dates
-            DateTimeFormatter formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+            Resource appointmentsResource = resourceLoader.getResource("classpath:static/JSON/appointments.json");
+            if (!appointmentsResource.exists()) {
+                System.err.println("Appointments JSON file not found at classpath:static/JSON/appointments.json");
+                return Collections.emptyList();
+            }
             
-            // Convert and save appointments
+            // Log file path
+            System.out.println("Loading appointments from: " + appointmentsResource.getURL());
+            
+            // Parse the JSON
+            Map<String, Object> appointmentsData = mapper.readValue(
+                appointmentsResource.getInputStream(),
+                new TypeReference<Map<String, Object>>() {}
+            );
+            
+            @SuppressWarnings("unchecked")
+            Map<String, Object> appointmentsContainer = (Map<String, Object>) appointmentsData.get("appointments");
+            
+            if (appointmentsContainer == null) {
+                System.err.println("Invalid appointments JSON structure: missing 'appointments' key");
+                return Collections.emptyList();
+            }
+            
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> appointmentsList = (List<Map<String, Object>>) appointmentsContainer.get("all");
+            
+            if (appointmentsList == null) {
+                System.err.println("Invalid appointments JSON structure: missing 'appointments.all' key");
+                return Collections.emptyList();
+            }
+            
+            System.out.println("Found " + appointmentsList.size() + " appointments in JSON file");
+            
+            // Convert JSON to Appointment entities
             List<Appointment> appointments = new ArrayList<>();
-            int parsedAppointments = 0;
-            int failedAppointments = 0;
+            Map<Long, Patient> patientMap = new HashMap<>();
             
-            // Create a map of patient IDs to patients for faster lookup
-            Map<Long, Patient> patientMap = patients.stream()
-                .collect(Collectors.toMap(Patient::getId, patient -> patient));
+            // Create a map of patient IDs to patients for easy lookup
+            for (Patient patient : patientRepository.findAll()) {
+                patientMap.put(patient.getId(), patient);
+            }
             
+            DateTimeFormatter formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+            int successCount = 0;
+            int errorCount = 0;
+            
+            // Set all appointments to today for testing
+            LocalDate today = LocalDate.now();
+            LocalDateTime startOfDay = today.atStartOfDay();
+            
+            // Process each appointment
             for (Map<String, Object> appointmentData : appointmentsList) {
                 try {
                     Appointment appointment = new Appointment();
                     
                     // Set appointment ID
                     appointment.setAppointmentId((String) appointmentData.get("appointmentId"));
-                    appointment.setPatientId((String) appointmentData.get("patientId"));
-                    appointment.setPractitionerId((String) appointmentData.get("practitionerId"));
                     
-                    // Parse and set appointment date/time
+                    // Set patient and practitioner IDs
+                    String patientId = (String) appointmentData.get("patientId");
+                    String practitionerId = (String) appointmentData.get("practitionerId");
+                    appointment.setPatientId(patientId);
+                    appointment.setPractitionerId(practitionerId);
+                    
+                    // Parse and set appointment date
+                    // NOTE: For testing, we're setting all appointments to today at different times
                     String dateTimeStr = (String) appointmentData.get("appointmentDate");
-                    LocalDateTime dateTime = LocalDateTime.parse(dateTimeStr, formatter);
-                    appointment.setAppointmentDate(dateTime);
+                    LocalDateTime originalDateTime;
+                    try {
+                        originalDateTime = LocalDateTime.parse(dateTimeStr, formatter);
+                    } catch (Exception e) {
+                        // If parsing fails, use a default time
+                       originalDateTime = startOfDay.plusHours(8).plusMinutes((long)(Math.random() * 480)); // 8 AM to 4 PM
+                    }
+                    
+                    // Use the original time but today's date
+                    LocalDateTime appointmentDateTime = startOfDay
+                        .plusHours(originalDateTime.getHour())
+                        .plusMinutes(originalDateTime.getMinute());
+                    
+                    appointment.setAppointmentDate(appointmentDateTime);
                     
                     // Set visit type and service code
                     appointment.setVisitType((String) appointmentData.get("visitType"));
                     appointment.setServiceCode((String) appointmentData.get("serviceCode"));
                     
                     appointments.add(appointment);
-                    parsedAppointments++;
                     
-                    // Update corresponding patient's time based on appointment
-                    String patientId = (String) appointmentData.get("patientId");
+                    // Update patient visit time based on appointment
                     Long numericPatientId = Long.parseLong(Math.abs(patientId.hashCode()) + "");
                     Patient patient = patientMap.get(numericPatientId);
                     
                     if (patient != null) {
-                        // Extract time from the appointment and format for display
-                        String time = dateTime.toLocalTime().toString();
-                        patient.setTime(time);
+                        // Format time for display (HH:MM AM/PM)
+                        String timeStr = appointmentDateTime.toLocalTime()
+                            .format(DateTimeFormatter.ofPattern("hh:mm a"));
+                        patient.setTime(timeStr);
                         
                         // Set duration based on visit type
                         String visitType = appointment.getVisitType();
@@ -379,24 +471,48 @@ public class DataInitializer implements CommandLineRunner {
                             patient.setDuration(30); // Standard duration
                         }
                     }
+                    
+                    successCount++;
                 } catch (Exception e) {
                     System.err.println("Error processing appointment: " + e.getMessage());
-                    failedAppointments++;
+                    errorCount++;
                 }
             }
             
-            // Save appointments
+            // Save all appointments
             appointmentRepository.saveAll(appointments);
             
             // Update patients with appointment times
-            patientRepository.saveAll(patients);
+            patientRepository.saveAll(patientMap.values());
             
-            System.out.println("Loaded " + appointments.size() + " appointments (" + parsedAppointments + " successful, " + failedAppointments + " failed)");
-            System.out.println("Database initialization complete!");
+            System.out.println("Loaded " + appointments.size() + " appointments (" + successCount + " successful, " + errorCount + " failed)");
+            return appointments;
         } catch (Exception e) {
-            System.err.println("Error processing appointments: " + e.getMessage());
+            System.err.println("Error loading appointments from JSON: " + e.getMessage());
             e.printStackTrace();
+            return Collections.emptyList();
         }
+    }
+    
+    // Helper for converting JSON values to Double
+    private Double convertToDouble(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Double) {
+            return (Double) value;
+        }
+        if (value instanceof Integer) {
+            return ((Integer) value).doubleValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Double.parseDouble((String) value);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
     }
     
     /**
