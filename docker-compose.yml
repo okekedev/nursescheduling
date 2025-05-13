@@ -1,0 +1,50 @@
+version: '3'
+
+volumes:
+  nominatim_data:
+  nominatim_flatnode:
+  graphhopper_data:
+  graphhopper_cache:
+
+services:
+  download-osm:
+    image: alpine/curl
+    command: sh -c '[ ! -f /data/texas-latest.osm.pbf ] && curl -L https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf -o /data/texas-latest.osm.pbf || echo "File exists, skipping download"'
+    volumes:
+      - graphhopper_data:/data
+
+  nominatim:
+    image: mediagis/nominatim:4.3
+    container_name: nominatim
+    ports:
+      - "8080:8080"
+    environment:
+      - PBF_URL=https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
+      - REPLICATION_URL=https://download.geofabrik.de/north-america/us-updates/
+      - NOMINATIM_USERNAME=nominatim
+      - NOMINATIM_PASSWORD=password
+      - NOMINATIM_MODE=READONLY
+    volumes:
+      - nominatim_data:/var/lib/postgresql/12/main
+      - nominatim_flatnode:/nominatim/flatnode
+    restart: unless-stopped 
+
+  graphhopper:
+    image: israelhikingmap/graphhopper
+    container_name: graphhopper
+    depends_on:
+      - download-osm
+    ports:
+      - "8989:8989"
+    volumes:
+      - graphhopper_data:/data
+      - graphhopper_cache:/graphhopper
+    environment:
+      - JAVA_OPTS=-Xmx2g
+    command: --input /data/texas-latest.osm.pbf --host 0.0.0.0 --graph.location=/graphhopper
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped 

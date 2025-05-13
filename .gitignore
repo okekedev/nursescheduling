@@ -1,24 +1,75 @@
-# Large data files
-graphhopper-standalone/
-nurse-scheduler-app/graphhopper-standalone/
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# React Native / Expo
+.expo/
+.expo-shared/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Node.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Routing & Map Data
+routing/nominatim_data/
+routing/nominatim_flatnode/
+routing/graphhopper_data/
 **/texas-latest.osm.pbf
 **/graph-cache/
-**/photon.jar
-photon/data/
-photon/photon*.jar
-
-# Generated data and caches
-src/main/resources/graphhopper/graph-cache/
-**/graph-cache/
-**/node_modules/
-**/generated/
-
-# Local tile cache
+*.osm.pbf
+*.mbtiles
+**/tiles/
 tile-cache/
 map-tiles/
-**/tiles/
+**/graphhopper/
+**/graphhopper-standalone/
+nurse-scheduler-app/graphhopper-standalone/
+photon/
+photon/data/
+photon/photon*.jar
+**/photon.jar
+*.service_pids
 
-# Maven build output
+# Docker Data
+docker/data/
+**/data/
+volumes/
+**/volumes/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+*.iml
+.project
+.classpath
+.settings/
+.metadata/
+bin/
+.factorypath
+nbproject/
+nb-configuration.xml
+
+# Build outputs
+build/
+dist/
 target/
 *.class
 *.jar
@@ -27,68 +78,39 @@ target/
 *.zip
 .mvn/wrapper/maven-wrapper.jar
 
-# IDE files
-.idea/
-*.iml
-.vscode/
-.classpath
-.project
-.settings/
-.metadata/
-bin/
-.factorypath
-nbproject/
-nb-configuration.xml
-
-# Local environment files
-.env
-*.env
-*.properties.local
-application-dev.properties
-application-local.properties
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-*.stackdump
-
-# JSON data (can contain sensitive info)
-src/main/resources/static/JSON/
-src/main/java/static/JSON/
-
-# Database files
-*.db
-*.sqlite
-*.h2.db
-*.mv.db
-*.trace.db
-
-# OS specific files
-.DS_Store
-Thumbs.db
-desktop.ini
-$RECYCLE.BIN/
-
 # Temporary files
+*.log
 *.tmp
+*.temp
 *.bak
-*.swp
 *~
 .temp/
 .cache/
 temp/
 tmp/
+logs/
+*.stackdump
 
-# Specific large directories in your project
-photon/
-**/graphhopper/
-*.service_pids
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.h2.db
+*.mv.db
+*.trace.db
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
 
 # Application specific
-*.osm.pbf
-*.mbtiles
-**/graphhopper-standalone/
-nurse-scheduler-app/graphhopper-standalone/
+src/main/resources/static/JSON/
+src/main/java/static/JSON/
+**/generated/
