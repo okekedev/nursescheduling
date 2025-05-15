@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import nursescheduler.service.NominatimGeocodingService;
+
 /**
  * Service to initialize data in the database from JSON files
  */
@@ -42,7 +44,7 @@ public class DataInitializer implements CommandLineRunner {
     private AppointmentRepository appointmentRepository;
     
     @Autowired
-    private PhotonGeocodingService geocodingService;
+    private NominatimGeocodingService geocodingService;
     
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -406,7 +408,7 @@ public class DataInitializer implements CommandLineRunner {
     private boolean tryGeocodeAddress(Nurse nurse, String address) {
         try {
             // Try geocoding the full address
-            PhotonGeocodingService.GeocodingResult result = geocodingService.geocodeAddress(address);
+            NominatimGeocodingService.GeocodingResult result = geocodingService.geocodeAddress(address);
             if (result != null) {
                 nurse.setLatitude(result.getLatitude());
                 nurse.setLongitude(result.getLongitude());
@@ -430,7 +432,7 @@ public class DataInitializer implements CommandLineRunner {
         try {
             // Strategy 1: Try full address
             String fullAddress = street + ", " + city + ", " + state + " " + zip;
-            PhotonGeocodingService.GeocodingResult result = geocodingService.geocodeAddress(fullAddress);
+            NominatimGeocodingService.GeocodingResult result = geocodingService.geocodeAddress(fullAddress);
             
             if (result != null) {
                 patient.setLatitude(result.getLatitude());

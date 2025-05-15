@@ -1,6 +1,6 @@
 package nursescheduler.controller;
 
-import nursescheduler.service.PhotonGeocodingService;
+import nursescheduler.service.NominatimGeocodingService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,7 +16,7 @@ import java.util.Map;
 public class GeocodingController {
 
     @Autowired
-    private PhotonGeocodingService geocodingService;
+    private NominatimGeocodingService geocodingService;
 
     /**
      * Geocode an address to latitude/longitude
@@ -37,7 +37,7 @@ public class GeocodingController {
                 return response;
             }
             
-            PhotonGeocodingService.GeocodingResult result = geocodingService.geocodeAddress(address);
+            NominatimGeocodingService.GeocodingResult result = geocodingService.geocodeAddress(address);
             
             if (result != null) {
                 Map<String, Object> resultMap = new HashMap<>();
@@ -81,7 +81,7 @@ public class GeocodingController {
                 return response;
             }
             
-            PhotonGeocodingService.GeocodingResult result = geocodingService.reverseGeocode(latitude, longitude);
+            NominatimGeocodingService.GeocodingResult result = geocodingService.reverseGeocode(latitude, longitude);
             
             if (result != null) {
                 Map<String, Object> resultMap = new HashMap<>();
